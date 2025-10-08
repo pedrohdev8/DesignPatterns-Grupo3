@@ -142,7 +142,7 @@ print(agente.ensinar("Python", {"nivel": "alto"}))
 
 ## 📂 Estrutura do repositório
 ```
-Agente-Conversacional-Matematica/
+DesignPatterns-Grupo3/
 ├─ README.md
 ├─ requirements.txt
 ├─ src/
@@ -194,6 +194,6 @@ Além disso, a implementação deste padrão também destacou o encapsulamento d
 Por fim, a experiência trouxe lições instrutivas sobre como equilibrar complexidade e benefícios, criar software focado no usuário e como criar sistemas que são desenvolvidos naturalmente ao longo do tempo, especialmente em sistemas de inteligência artificial e agentes adaptativos.
 
 ## 👨‍💻 Autor(es)
-Maicon Dias - 082210032.
-Pedro Vieira - 082210025.
-Thiago Baptistella - 082210010.
+- Maicon Dias - 082210032
+- Pedro Vieira - 082210025
+- Thiago Baptistella - 082210010
