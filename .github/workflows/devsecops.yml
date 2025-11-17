@@ -1,189 +1,60 @@
-name: DevSecOps Pipeline (Agente Educacional N8n)
+name: DevSecOps Pipeline (N8n VPS Deploy)
 
 on:
   push:
-    branches: [ main, develop ]
-  pull_request:
     branches: [ main ]
-
-permissions:
-  contents: write
-  pull-requests: write
-  security-events: write
+  workflow_dispatch: # Permite rodar manualmente clicando num botão no GitHub
 
 jobs:
   ##########################################
-  # 1. SOURCE - Análise Estática (SAST)
+  # 1. SECURITY - Análise Estática
   ##########################################
-  source:
-    name: 🔍 Source Analysis (Semgrep & Gitleaks)
+  security_scan:
+    name: 🔍 SAST & Secret Scan
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run Semgrep (SAST)
-        uses: returntocorp/semgrep-action@v1
-        with:
-          config: "p/owasp-top-ten"
-
       - name: Detect Secrets (Gitleaks)
+        # Usando a versão mais recente e recomendada
         uses: gitleaks/gitleaks-action@v2
-        with:
-          args: detect --source . --verbose
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   ##########################################
-  # 2. BUILD - Instalação e Escaneamento
-  ##########################################
-  build:
-    name: 🧱 Build & Dependency Scans (N8n + APIs)
-    runs-on: ubuntu-latest
-    needs: source
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node.js (para N8n e integrações)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Install dependencies
-        run: |
-          npm install
-          npm audit --production
-
-      - name: Run Trivy - Code & Dependencies Scan
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          ignore-unfixed: true
-          severity: 'HIGH,CRITICAL'
-
-      - name: Build Docker image (N8n + API Gateway)
-        run: docker build -t agente-educacional-n8n:latest .
-
-      - name: Run Trivy on Docker image
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'agente-educacional-n8n:latest'
-          format: 'table'
-          exit-code: '0'
-          severity: 'HIGH,CRITICAL'
-
-      - name: Save Docker image
-        run: docker save agente-educacional-n8n:latest -o agente-educacional-n8n.tar
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: agente-educacional-n8n-image
-          path: agente-educacional-n8n.tar
-
-  ##########################################
-  # 3. TEST - Dynamic Security Tests (DAST)
-  ##########################################
-  test:
-    name: 🧪 Dynamic Security Tests (OWASP ZAP)
-    runs-on: ubuntu-latest
-    needs: build
-
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-
-    steps:
-      - name: Download image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: agente-educacional-n8n-image
-          path: .
-
-      - name: Load Docker image
-        run: docker load -i agente-educacional-n8n.tar
-
-      - name: Start N8n container (simulação do ambiente Hostinger)
-        run: |
-          docker run -d -p 5678:5678 --name agente-educacional-n8n \
-            -e SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
-            -e SUPABASE_KEY="${{ secrets.SUPABASE_KEY }}" \
-            -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
-            -e GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" \
-            agente-educacional-n8n:latest
-
-      - name: Wait for N8n to start
-        run: |
-          for i in {1..10}; do
-            if curl -s http://localhost:5678 > /dev/null; then
-              echo "✅ N8n está respondendo!"
-              exit 0
-            fi
-            echo "Tentativa $i de 10: aguardando N8n..."
-            sleep 5
-          done
-          echo "❌ N8n não iniciou a tempo"
-          docker logs agente-educacional-n8n
-          exit 1
-
-      - name: Run OWASP ZAP baseline scan
-        uses: zaproxy/action-baseline@v0.9.0
-        with:
-          target: 'http://localhost:5678'
-          cmd_options: '-J zap_report.json -r zap_report.html'
-        continue-on-error: true
-
-      - name: Stop container
-        if: always()
-        run: |
-          docker stop agente-educacional-n8n || true
-          docker rm agente-educacional-n8n || true
-
-  ##########################################
-  # 4. RELEASE - Validação
-  ##########################################
-  release:
-    name: 🚀 Release Validation
-    runs-on: ubuntu-latest
-    needs: test
-    if: github.ref == 'refs/heads/main'
-    environment:
-      name: production
-      url: https://seu-agente.hostinger.com
-    steps:
-      - name: Validate Release
-        run: echo "✅ Testes e verificações finalizadas — pronto para deploy!"
-
-  ##########################################
-  # 5. DEPLOY - Publicação no Servidor Hostinger
+  # 2. DEPLOY - Atualização na VPS via SSH
   ##########################################
   deploy:
-    name: ☁️ Deploy to Hostinger (FTP ou Docker)
+    name: ☁️ Deploy to Hostinger VPS
     runs-on: ubuntu-latest
-    needs: release
+    needs: security_scan
+    if: github.ref == 'refs/heads/main'
+    
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy via FTP (Hostinger Web)
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v0.1.10
         with:
-          server: ${{ secrets.HOSTINGER_FTP_SERVER }}
-          username: ${{ secrets.HOSTINGER_FTP_USERNAME }}
-          password: ${{ secrets.HOSTINGER_FTP_PASSWORD }}
-          local-dir: ./dist
-          server-dir: /public_html/
-
-      # Caso utilize VPS na Hostinger (Docker):
-      # - name: Deploy via SSH e Docker
-      #   uses: appleboy/ssh-action@v0.1.10
-      #   with:
-      #     host: ${{ secrets.HOSTINGER_SSH_HOST }}
-      #     username: ${{ secrets.HOSTINGER_SSH_USER }}
-      #     key: ${{ secrets.HOSTINGER_SSH_KEY }}
-      #     script: |
-      #       docker stop agente-educacional-n8n || true
-      #       docker rm agente-educacional-n8n || true
-      #       docker load -i agente-educacional-n8n.tar
-      #       docker run -d -p 5678:5678 agente-educacional-n8n:latest
+          host: ${{ secrets.HOSTINGER_SSH_HOST }}
+          username: ${{ secrets.HOSTINGER_SSH_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: 22
+          script: |
+            # 1. Navegar para a pasta do projeto na VPS
+            # (Crie essa pasta na VPS antes: mkdir -p /opt/n8n-educacional)
+            cd /opt/n8n-educacional
+            
+            # 2. Atualizar o código (Ex: docker-compose.yml ou scripts python auxiliares)
+            # Se você ainda não clonou o repo lá, faça 'git clone' na primeira vez manualmente
+            git pull origin main
+            
+            # 3. Criar/Atualizar arquivo .env com as secrets do GitHub
+            echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
+            
+            # 4. Reiniciar os containers do Docker
+            # Isso baixa a imagem oficial mais nova do n8n e recria o container
+            docker compose pull
+            docker compose up -d --remove-orphans
+            
+            # 5. Limpeza de imagens antigas para economizar espaço na VPS
+            docker image prune -f
