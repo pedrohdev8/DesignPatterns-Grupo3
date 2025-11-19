@@ -1,0 +1,42 @@
+name: Deploy n8n Workflow
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'workflow.json'
+
+jobs:
+  deploy:
+    name: Deploy workflow to n8n
+    runs-on: ubuntu-latest
+    env:
+      WORKFLOW_ID: fN5LdMrxWWyJbkbC
+      WORKFLOW_FILE: workflow.json
+      N8N_URL: ${{ secrets.N8N_URL }}
+      N8N_API_KEY: ${{ secrets.N8N_API_KEY }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+
+      - name: Deploy workflow to n8n
+        run: |
+          set -e
+          # compact JSON to a single-line safe string
+          WORKFLOW_DATA=$(jq -c . "$WORKFLOW_FILE")
+          PAYLOAD="{\"data\":$WORKFLOW_DATA,\"active\":true}"
+
+          curl -S -X PUT \
+            -H "Content-Type: application/json" \
+            -H "X-N8N-API-KEY: $N8N_API_KEY" \
+            -d "$PAYLOAD" \
+            "$N8N_URL/api/v1/workflows/$WORKFLOW_ID"
+
+          echo "Workflow with ID $WORKFLOW_ID deployed and activated."
