@@ -58,3 +58,48 @@ jobs:
             
             # 5. Limpeza de imagens antigas para economizar espaço na VPS
             docker image prune -f
+
+
+            name: Deploy n8n Workflow
+
+on:
+  push:
+    branches:
+      - main  # Altere para a branch principal que você usa
+    paths:
+      - 'workflow.json' # Altere para o nome do arquivo do seu fluxo (por exemplo, AgenteIAFracao.json)
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout do Código
+        uses: actions/checkout@v4
+
+      - name: 🚀 Fazer o Deploy do Workflow no n8n
+        env:
+          N8N_URL: ${{ secrets.N8N_URL }} 
+          N8N_API_KEY: ${{ secrets.N8N_API_KEY }} 
+          WORKFLOW_ID: fN5LdMrxWWyJbkbC 
+          WORKFLOW_FILE: workflow.json 
+
+        run: |
+          # 1. Obter o conteúdo do seu fluxo de trabalho JSON
+          WORKFLOW_DATA=$(cat $WORKFLOW_FILE | tr -d '\n')
+          
+          # 2. Criar o payload para a API, incluindo o ID e a tag 'active: true'
+          #    IMPORTANTE: O 'nodes' deve ser uma string, por isso é crucial escapar as aspas.
+          #    No n8n, a API de atualização (PUT) precisa de um corpo específico:
+          #    { "data": { "nodes": [...] }, "active": true }
+          
+          PAYLOAD="{ \"data\": $WORKFLOW_DATA, \"active\": true }"
+          
+          # 3. Fazer a chamada PUT para atualizar o fluxo de trabalho existente
+          #    O header 'X-N8N-API-KEY' é a forma padrão de autenticar com a chave API
+          curl -X PUT \
+            -H "Content-Type: application/json" \
+            -H "X-N8N-API-KEY: $N8N_API_KEY" \
+            -d "$PAYLOAD" \
+            $N8N_URL/api/v1/workflows/$WORKFLOW_ID
+          
+          echo "Workflow com ID $WORKFLOW_ID implantado e ativado com sucesso!"
